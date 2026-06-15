@@ -171,22 +171,36 @@ Academic literature consistently shows 52–57% as achievable with technical ind
 
 #### SHAP (SHapley Additive exPlanations)
 - **What it does:** Assigns each feature a contribution score for a specific prediction. Based on cooperative game theory — how much does each feature "contribute" to moving the prediction away from the baseline?
-- **Implementation:** `shap.GradientExplainer` — works natively with TensorFlow/Keras by computing gradients.
-- **Key finding:** `VIX_NORM` (fear index) is the most globally important feature across all stocks. When market fear rises, the model predicts downward pressure across all tech stocks.
+- **Implementation:** `shap.GradientExplainer` — works natively with TensorFlow/Keras by computing gradients. Both bar plots (global importance) and beeswarm plots (per-sample signed importance) are generated for all 10 stocks.
+- **Key finding (bar chart):** `VIX_NORM` (fear index) is the most globally important feature on average. When market fear rises, the model predicts downward pressure across all tech stocks.
+- **Key finding (beeswarm — per stock):** Feature importance is NOT uniform across stocks. Three distinct patterns emerge:
+  - **Large-cap, institutionally traded stocks (MSFT, AMZN, NVDA, NFLX):** `VIX_NORM` dominates — macro fear drives their short-term price moves more than individual technical signals.
+  - **High-volatility stocks (TSLA, AMD):** `BB_POS` and `RSI` dominate — where the stock sits within its own Bollinger Band and momentum oscillators matter more than broad market sentiment.
+  - **Stocks with high intrinsic volatility (META, INTC):** `ATR_PCT` dominates — the stock's own daily range drives predictions more than external signals.
+- **Colour pattern:** Across all beeswarm plots, red dots (high VIX) consistently fall on the negative SHAP side — high market fear pushes all stock predictions downward regardless of stock type. Economically correct.
+- **Why this matters:** The stock-specific variation in dominant features confirms that the per-stock model architecture (rather than one shared model) was the correct design choice. A single shared model would average out these differences and lose predictive signal.
 - **Pros:** Theoretically grounded, consistent with model internals, fast with GradientExplainer.
 - **Cons:** Approximate for deep learning; exact Shapley values are computationally intractable for neural nets.
 
 #### LIME (Local Interpretable Model-agnostic Explanations)
 - **What it does:** Explains individual predictions by perturbing the input and fitting a simple linear model around that neighbourhood.
-- **Implementation:** `lime.lime_tabular` on flattened input (60 days × 13 features = 780 features). A wrapper function reshapes flat input back to 3D for the GRU.
-- **Key finding:** RSI in the most recent 1–2 days (D59_RSI, D60_RSI) and VIX_NORM are the strongest local drivers for AAPL Day 1 prediction. Recency matters — the last few days of momentum dominate.
+- **Implementation:** `lime.lime_tabular` on flattened input (60 days × 13 features = 780 features). A wrapper function reshapes flat input back to 3D for the GRU. Applied to the most recent 60-day window for all 10 stocks.
+- **Key findings (per stock):**
+  - **AAPL, MSFT:** DOW (day-of-week) is the top local driver — both large-cap stocks have strong weekly seasonality patterns the model has learned.
+  - **GOOGL:** D1 and D2 features (the *oldest* days in the 60-day window, ~2 months ago) dominate — the model uses longer-range context for GOOGL than any other stock, suggesting stronger long-range momentum dependencies.
+  - **META:** D53_MOMENTUM_20 is a large negative driver — medium-term momentum from ~7 weeks ago pulls predictions down. Past momentum cycles matter more than recent signals.
+  - **TSLA, AMD:** Recent BB_POS and RSI (D59, D60) dominate and are positive — consistent with SHAP beeswarm finding. The model asks "where is the price right now within its Bollinger Band?"
+  - **NVDA, AMZN:** VOL_RATIO drives predictions locally — volume spikes are the strongest signal.
+  - **NFLX:** VOL_RATIO from earlier days (D10) dominates — NFLX price moves are preceded by volume signals several days earlier.
+  - **INTC:** RETURN_5D is a large negative driver — recent 5-day losses predict further decline.
+- **LIME vs SHAP consistency:** TSLA/AMD results align perfectly (BB_POS + RSI in both). GOOGL's long-range dependency is a new finding SHAP did not reveal. MSFT/AMZN/NVDA show VIX globally (SHAP) but volume/BB locally (LIME) — both valid at different scopes.
 - **Pros:** Model-agnostic, easy to interpret, good for explaining single predictions to non-technical clients.
-- **Cons:** Can be unstable (different runs give slightly different explanations); slow for large input spaces.
+- **Cons:** Can be unstable (different runs give slightly different explanations); slow for large input spaces (780 features).
 
 **SHAP vs LIME:**
-- SHAP: global feature importance, grounded in theory, consistent.
-- LIME: local (per-prediction) importance, intuitive, more client-friendly.
-- Both are used together for a complete XAI picture.
+- SHAP: global feature importance across all predictions, grounded in cooperative game theory, consistent across runs.
+- LIME: local (per-prediction) importance for the most recent window, intuitive, more client-friendly, reveals recency and stock-specific patterns SHAP averages out.
+- Both are used together for a complete XAI picture — SHAP tells you what the model generally relies on; LIME tells you what drove today's specific prediction.
 
 ---
 
@@ -249,9 +263,9 @@ SMOTE (Synthetic Minority Oversampling Technique) is used to address class imbal
 1. **Directional accuracy is modest (50–56%)** — this is realistic and consistent with academic literature on technical-indicator-based forecasting. Stock markets are efficient and largely unpredictable from price history alone.
 2. **Classifier bias toward UP** — trained on 2018–2025 data which was predominantly a bull market. The classifier rarely predicts DOWN because most training days were UP.
 3. **INTC classifier failure** — F1 score of 0% means the classifier never predicted DOWN for INTC. This is a known limitation and should be flagged when presenting results.
-4. **No fundamental data** — earnings, P/E ratio, revenue growth, insider trading are not included.
+4. **No fundamental data** — earnings, P/E ratio, revenue growth, insider trading are not included. These would meaningfully improve predictions.
 5. **Sentiment coverage** — Finnhub free tier only provides recent headlines, not historical. Sentiment cannot be backtested.
-
+6. **No macro features** — interest rates, inflation, GDP data are not included.
 
 ---
 
